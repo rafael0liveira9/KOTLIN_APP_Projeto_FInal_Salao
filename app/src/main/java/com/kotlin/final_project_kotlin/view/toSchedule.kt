@@ -1,25 +1,40 @@
 package com.kotlin.final_project_kotlin.view
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import androidx.annotation.RequiresApi
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.snackbar.Snackbar
 import com.kotlin.final_project_kotlin.databinding.ActivityToScheduleBinding
 import com.kotlin.final_project_kotlin.model.DataStore
-import java.util.Calendar
+import com.kotlin.final_project_kotlin.model.ListAvaible
+import com.kotlin.final_project_kotlin.controller.ListAvaibleAdapter
+import org.json.JSONArray
+import org.json.JSONException
+import com.android.volley.DefaultRetryPolicy
+import com.android.volley.RequestQueue
+import com.android.volley.Response
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
+import com.kotlin.final_project_kotlin.model.Services
 
 class toSchedule : AppCompatActivity() {
 
     private lateinit var binding: ActivityToScheduleBinding
-    private var calendar : Calendar = Calendar.getInstance()
-    private var data: String = ""
-    private var time: String = ""
-    private var position = -1
+    lateinit var queue: RequestQueue
 
+    private val avaibleList = mutableListOf<ListAvaible>()
+    private val servicesList = mutableListOf<Services>()
+    private lateinit var adapter: ListAvaibleAdapter
+    private lateinit var gestures: GestureDetector
+    private lateinit var rootView: View
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,111 +42,123 @@ class toSchedule : AppCompatActivity() {
 
         binding = ActivityToScheduleBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        queue = Volley.newRequestQueue(this)
 
         supportActionBar?.hide()
+        rootView = findViewById(android.R.id.content)
+
+
+        adapter = ListAvaibleAdapter(this, avaibleList, servicesList, rootView, queue)
+        binding.servicesGetRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.servicesGetRecyclerView.adapter = adapter
+
+        getList()
+        configureGesture()
 
         intent.run {
-            position = this.getIntExtra("position", -1)
-            val service = DataStore.getService(position)
-            if (position != -1 && service != null) {
-                Log.d("Tag", (position.toString()))
-                binding.scheduleTitleName.text = service.name
+            val serviceId = this.getIntExtra("id", -1)
+            val serviceName = this.getStringExtra("name")
+            val serviceImage = this.getStringExtra("image")
+            val servicePrice = this.getDoubleExtra("value", 0.0)
+
+
+
+
+            if (serviceId != -1) {
+
+                val service = Services(id = serviceId, name = serviceName )
+                servicesList.add(service)
+
+                if (serviceName != null) {
+                    binding.scheduleTitleName.text = serviceName
+                } else {
+                    Log.d("Tag", "Erro ao obter serviço")
+                }
             } else {
-                Log.d("Tag", "Erro ao obter serviço")
+                Log.d("Tag", "Erro ao obter ID do serviço")
             }
         }
-
-        val datePicker = binding.datePicker
-        datePicker.setOnDateChangedListener { _, yearPick, monthOfYear, dayOfMonth ->
-            calendar.set(Calendar.YEAR,yearPick)
-            calendar.set(Calendar.MONTH,monthOfYear)
-            calendar.set(Calendar.DAY_OF_MONTH,dayOfMonth)
-            var day = dayOfMonth.toString()
-            var month = monthOfYear.toString()
-            val year = yearPick.toString()
-
-            if (dayOfMonth<10) {
-                day = "0$dayOfMonth"
-            }
-
-            if (monthOfYear<10) {
-                month = "0$monthOfYear"
-            }else{
-                month = (monthOfYear +1).toString()
-            }
-
-            data = "$day/$month/$year"
-        }
-        val hourPicker = binding.hourPicker
-        hourPicker.setOnTimeChangedListener { _, hourPick, minutesPick ->
-            var hour:String
-            var minutes:String
-
-            if (hourPick<10) {
-                hour = "0$hourPick"
-            }else{
-                hour = hourPick.toString()
-            }
-
-            if (minutesPick<10) {
-                minutes = "0$minutesPick"
-            }else{
-                minutes = minutesPick.toString()
-            }
-
-            time = "$hour:$minutes"
-
-        }
-
-        binding.hourPicker.setIs24HourView(true)
 
         binding.btnBack.setOnClickListener {
             finish()
         }
-
-        binding.btnDone.setOnClickListener {
-            when {
-                time.isEmpty() -> {
-                    message(it, "Por Favor, selecione um Horário...")
-                }
-                time < "08:00" && time > "19:00" -> {
-                    message(it, "O Horário de Atendimento: 08:00 as 19:00")
-                }
-                data.isEmpty() -> {
-                    message(it, "Por Favor, selecione uma Data...")
-                }
-                else -> {
-                    if(position == -1) {
-                        addService()
-                        messageDone(it, "Serviço Adicionado com Sucesso!")
-                    }else {
-                        editService()
-                        messageDone(it, "Serviço Atualizado com Sucesso!")
-                    }
-                    finish()
-                }
-            }
-
-        }
     }
 
-    private fun message (view: View, message: String) {
+    fun message(view: View, message: String) {
         val snackbar = Snackbar.make(view, message, Snackbar.LENGTH_SHORT)
         snackbar.setBackgroundTint(Color.parseColor("#FF0000"))
         snackbar.setTextColor(Color.parseColor("#FFFFFF"))
         snackbar.show()
     }
-    private fun messageDone (view: View, message: String) {
+
+    fun messageDone(view: View, message: String) {
         val snackbar = Snackbar.make(view, message, Snackbar.LENGTH_SHORT)
         snackbar.setBackgroundTint(Color.parseColor("#008000"))
         snackbar.setTextColor(Color.parseColor("#FFFFFF"))
         snackbar.show()
     }
 
-    private fun addService() {
+    fun getList() {
+        val listUrl = "${DataStore.DATABASE_URL}get-list"
 
-    }
-    private fun editService() {
+        val stringRequest = object : StringRequest(
+            Method.GET, listUrl,
+            Response.Listener { response ->
+                try {
+                    val jsonArray = JSONArray(response)
 
+                    avaibleList.clear()
+
+                    for (i in 0 until jsonArray.length()) {
+                        val jsonObject = jsonArray.getJSONObject(i)
+                        val listItem = ListAvaible.fromJson(jsonObject)
+                        avaibleList.add(listItem)
+
+                    }
+
+
+                    adapter.updateAvaibleList(avaibleList)
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                    Log.e("LIST_ERROR", "Erro ao fazer parsing do JSON: $e")
+                }
+            },
+            Response.ErrorListener { error ->
+                Log.e("LIST_ERROR", "Erro: $error")
+            }) {
+            override fun getParams(): Map<String, String> {
+                return params
+            }
+        }
+
+        stringRequest.retryPolicy = DefaultRetryPolicy(
+            5000, // 5 segundos
+            DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+            DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+        )
+
+        queue.add(stringRequest)
     }
+
+    private fun configureGesture() {
+        gestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                super.onLongPress(e)
+            }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                binding.servicesGetRecyclerView.findChildViewUnder(e.x, e.y).apply {
+                    this?.let { view ->
+                        val clickedPosition =
+                            binding.servicesGetRecyclerView.getChildAdapterPosition(view)
+                        val selectedServiceId = avaibleList[clickedPosition].id
+
+                    }
+                }
+                return super.onSingleTapConfirmed(e)
+            }
+        })
+    }
+
+
 }

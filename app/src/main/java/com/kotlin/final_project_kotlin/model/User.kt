@@ -14,17 +14,8 @@ data class User(
     @SerializedName("email")
     var email : String,
 
-    @SerializedName("password")
-    var password : String,
-
-    @SerializedName("createdAt")
-    var createdAt : DateFormat,
-
-    @SerializedName("updatedAt")
-    var updatedAt : DateFormat,
-
-    @SerializedName("deletedAt")
-    var deletedAt : DateFormat
+    @SerializedName("jwt")
+    var jwt : String
 ) {
 
 }
